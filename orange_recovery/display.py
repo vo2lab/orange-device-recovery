@@ -15,16 +15,16 @@ class DisplayAnnouncer:
         self.status_file = Path(status_file)
         self.logger = logging.getLogger("orange_recovery.display")
 
-    def announce_recovery_active(self, ssid: str, password: str, timeout_seconds: int) -> None:
+    def announce_recovery_active(self, ssid: str, password: str, timeout_seconds: int, active: bool = True) -> None:
         lines = [
-            "RECOVERY MODE ACTIVE",
+            "RECOVERY MODE ACTIVE" if active else "RECOVERY MODE STARTING",
             "Connect phone to:",
             ssid,
             "",
             "Password:",
             password,
             "",
-            "Waiting for phone connection.",
+            "Waiting for phone connection." if active else "Starting hotspot.",
             f"Timeout: {max(1, timeout_seconds // 60)} minutes.",
         ]
         self.write_lines(lines)

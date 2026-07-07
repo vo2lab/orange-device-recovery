@@ -86,11 +86,19 @@ class RecoveryController:
 
         try:
             self._set_state(STARTING_HOTSPOT, "Starting recovery hotspot.")
+            self.ssid = self.hotspot.ssid()
+            self.display.announce_recovery_active(
+                self.ssid,
+                self.session_password,
+                self.config.hotspot.no_client_timeout_seconds,
+                active=False,
+            )
             self.ssid = self.hotspot.start(self.session_password)
             self.display.announce_recovery_active(
                 self.ssid,
                 self.session_password,
                 self.config.hotspot.no_client_timeout_seconds,
+                active=True,
             )
             self._set_state(WAITING_FOR_CLIENT, "Waiting for phone connection.")
             self._start_api()

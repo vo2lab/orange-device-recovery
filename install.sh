@@ -126,7 +126,8 @@ hotspot:
   dhcp_end: "192.168.50.100"
   no_client_timeout_seconds: 60
   connected_inactivity_timeout_seconds: 1200
-  password_mode: "random"
+  password_mode: "configured"
+  password: "orange1234"
 
 api:
   enabled: true

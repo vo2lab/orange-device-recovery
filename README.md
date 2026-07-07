@@ -31,6 +31,12 @@ The installer writes:
 
 No `.venv` or `.venvs` path is used.
 
+The default recovery Wi-Fi password is:
+
+```text
+orange1234
+```
+
 Uninstall:
 
 ```bash

@@ -158,8 +158,8 @@ class HotspotConfig:
     dhcp_end: str = "192.168.50.100"
     no_client_timeout_seconds: int = 60
     connected_inactivity_timeout_seconds: int = 1200
-    password_mode: str = "random"
-    password: str = ""
+    password_mode: str = "configured"
+    password: str = "orange1234"
     interface: str = ""
 
 

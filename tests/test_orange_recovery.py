@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from orange_recovery.api_server import RecoveryApiServer
 from orange_recovery.config import RecoveryConfig
+from orange_recovery.hotspot import RecoveryHotspot
 from orange_recovery.network_manager import NetworkManager
 from orange_recovery.qr_trigger import RecoveryQrHandler
 from orange_recovery.recovery_controller import RecoveryController
@@ -106,6 +107,10 @@ class OrangeRecoveryTest(unittest.TestCase):
             self.assertTrue(result.ok, result.error)
             self.assertTrue(result.package_valid)
             self.assertEqual(result.manifest["package_type"], "orange_repair")
+
+    def test_default_hotspot_password_is_simple_configured_value(self):
+        cfg = RecoveryConfig()
+        self.assertEqual(RecoveryHotspot(cfg, NetworkManager(cfg, dry_run=True)).password(), "orange1234")
 
     def test_package_validation_rejects_malicious_zip_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
