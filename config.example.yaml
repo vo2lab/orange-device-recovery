@@ -20,9 +20,14 @@ api:
   enabled: true
   host: "192.168.50.1"
   port: 8787
+  public_hostname: "recovery.o-range.golf"
+  public_url: "https://recovery.o-range.golf:8787/"
   require_token: true
   max_upload_mb: 50
   prefer_fastapi: true
+  tls_enabled: true
+  tls_cert_file: "/etc/orange-recovery/tls/recovery.o-range.golf/fullchain.pem"
+  tls_key_file: "/etc/orange-recovery/tls/recovery.o-range.golf/privkey.pem"
 
 repair:
   max_zip_mb: 50

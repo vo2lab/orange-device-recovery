@@ -53,7 +53,7 @@ Set `PURGE_CONFIG=1` to remove config, uploads, state, and backups.
 3. `orange_recovery.handle_scanned_qr(code)` consumes a matching trigger,
    starts a temporary hotspot, and pauses normal QR processing.
 4. The phone joins `ORANGE-RECOVERY-<MACHINE_ID>`.
-5. The phone opens `http://192.168.50.1:8787`.
+5. The phone opens `https://recovery.o-range.golf:8787`.
 6. The local page asks for the ZIP file and uploads it to the Pi.
 7. The Pi validates and applies the uploaded recovery repo bundle, then restores
    normal networking.
@@ -96,6 +96,19 @@ production.
 `GET /` serves the minimal browser upload page used by the mobile transfer flow.
 The page embeds the current session token and posts the chosen repo ZIP to
 `/upload-repo`.
+
+## Trusted Hotspot URL
+
+Browsers cannot trust a public certificate for `192.168.50.1`, so recovery uses
+`https://recovery.o-range.golf:8787`. The dispenser hotspot config writes a
+NetworkManager dnsmasq override that resolves `recovery.o-range.golf` to the Pi
+hotspot IP while the phone is connected to `ORANGE-RECOVERY-<MACHINE_ID>`.
+
+When the authenticated Range repair download includes
+`tls/recovery.o-range.golf/fullchain.pem` and `tls/recovery.o-range.golf/privkey.pem`,
+the installer copies them to `/etc/orange-recovery/tls/recovery.o-range.golf/`
+and the recovery API serves HTTPS. If the files are missing, the API falls back
+to HTTP and logs a warning.
 
 ## Hotspot Troubleshooting
 

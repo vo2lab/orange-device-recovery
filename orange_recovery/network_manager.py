@@ -47,6 +47,7 @@ class NetworkManager:
         backend = self.config.network.preferred_backend
         if backend in {"auto", "networkmanager"} and (self.dry_run or shutil.which("nmcli")):
             self._prepare_networkmanager_wifi(iface)
+            self._configure_shared_dnsmasq()
             self._run(["nmcli", "connection", "delete", "OrangeRecovery"], allow_failure=True)
             try:
                 self._run([
@@ -148,6 +149,22 @@ class NetworkManager:
             f"sudo nmcli device set {iface} managed yes; sudo ip link set {iface} up; "
             "nmcli device status"
         )
+
+    def _configure_shared_dnsmasq(self) -> None:
+        hostname = self.config.api.public_hostname.strip().rstrip(".")
+        if not hostname:
+            return
+        target = Path("/etc/NetworkManager/dnsmasq-shared.d/orange-recovery.conf")
+        content = f"address=/{hostname}/{self.config.hotspot.ip}\n"
+        if self.dry_run:
+            self.commands_run.append(["write", str(target), content.strip()])
+            return
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            os.chmod(target, 0o644)
+        except OSError:
+            self.logger.exception("failed to write NetworkManager hotspot DNS override: %s", target)
 
     def restore(self) -> None:
         iface = self.config.hotspot.interface or self.detect_wifi_interface()

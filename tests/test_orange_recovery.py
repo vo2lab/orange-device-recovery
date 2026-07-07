@@ -7,6 +7,9 @@ import http.client
 import io
 import json
 import os
+import shutil
+import ssl
+import subprocess
 import sys
 import tempfile
 import time
@@ -18,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from orange_recovery.api_server import RecoveryApiServer
-from orange_recovery.config import RecoveryConfig
+from orange_recovery.config import RecoveryConfig, config_from_dict
 from orange_recovery.hotspot import RecoveryHotspot
 from orange_recovery.network_manager import NetworkManager
 from orange_recovery.qr_trigger import RecoveryQrHandler
@@ -118,6 +121,23 @@ class OrangeRecoveryTest(unittest.TestCase):
     def test_default_hotspot_password_is_simple_configured_value(self):
         cfg = RecoveryConfig()
         self.assertEqual(RecoveryHotspot(cfg, NetworkManager(cfg, dry_run=True)).password(), "orange1234")
+
+    def test_api_tls_config_loads(self):
+        cfg = config_from_dict({
+            "api": {
+                "public_hostname": "recovery.example.test",
+                "public_url": "https://recovery.example.test:8787/",
+                "tls_enabled": True,
+                "tls_cert_file": "/tmp/fullchain.pem",
+                "tls_key_file": "/tmp/privkey.pem",
+            }
+        })
+
+        self.assertEqual(cfg.api.public_hostname, "recovery.example.test")
+        self.assertEqual(cfg.api.public_url, "https://recovery.example.test:8787/")
+        self.assertTrue(cfg.api.tls_enabled)
+        self.assertEqual(cfg.api.tls_cert_file, "/tmp/fullchain.pem")
+        self.assertEqual(cfg.api.tls_key_file, "/tmp/privkey.pem")
 
     def test_package_validation_rejects_malicious_zip_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -239,6 +259,58 @@ class OrangeRecoveryTest(unittest.TestCase):
             finally:
                 server.stop()
 
+    @unittest.skipUnless(shutil.which("openssl"), "openssl is required for temporary TLS cert generation")
+    def test_builtin_api_serves_https_with_tls_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cert = Path(tmp) / "cert.pem"
+            key = Path(tmp) / "key.pem"
+            subprocess.run(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-newkey",
+                    "rsa:2048",
+                    "-nodes",
+                    "-subj",
+                    "/CN=localhost",
+                    "-days",
+                    "1",
+                    "-keyout",
+                    str(key),
+                    "-out",
+                    str(cert),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=20,
+            )
+            cfg = self.config(tmp)
+            controller = RecoveryController(cfg)
+            controller.active = True
+            controller.session_token = "page-token"
+            server = RecoveryApiServer(
+                controller,
+                "127.0.0.1",
+                0,
+                prefer_fastapi=False,
+                tls_enabled=True,
+                tls_cert_file=str(cert),
+                tls_key_file=str(key),
+            )
+            server.start()
+            try:
+                context = ssl._create_unverified_context()
+                conn = http.client.HTTPSConnection("127.0.0.1", server.port, timeout=5, context=context)
+                conn.request("GET", "/")
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertIn("Orange Recovery Upload", response.read().decode("utf-8"))
+                conn.close()
+            finally:
+                server.stop()
+
     def test_api_uploads_repo_bundle(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self.config(tmp)
@@ -289,6 +361,10 @@ class OrangeRecoveryTest(unittest.TestCase):
             self.assertIn("nmcli radio wifi on", commands)
             self.assertIn("nmcli device set wlan0 managed yes", commands)
             self.assertIn("ip link set wlan0 up", commands)
+            self.assertIn(
+                "write /etc/NetworkManager/dnsmasq-shared.d/orange-recovery.conf address=/recovery.o-range.golf/192.168.50.1",
+                commands,
+            )
             self.assertTrue(any("nmcli device wifi hotspot" in command for command in commands))
 
     def test_restore_dry_run_does_not_flush_wifi(self):
