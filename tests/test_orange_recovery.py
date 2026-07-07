@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from orange_recovery.api_server import RecoveryApiServer
 from orange_recovery.config import RecoveryConfig
+from orange_recovery.network_manager import NetworkManager
 from orange_recovery.qr_trigger import RecoveryQrHandler
 from orange_recovery.recovery_controller import RecoveryController
 from orange_recovery.repair_package import RepairPackageManager
@@ -205,6 +206,19 @@ class OrangeRecoveryTest(unittest.TestCase):
                 conn.close()
             finally:
                 server.stop()
+
+    def test_hotspot_dry_run_prepares_networkmanager_wifi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            network = NetworkManager(cfg)
+            network.start_hotspot("ORANGE-RECOVERY-TEST", "Password12345")
+
+            commands = [" ".join(command) for command in network.commands_run]
+            self.assertIn("rfkill unblock wifi", commands)
+            self.assertIn("nmcli radio wifi on", commands)
+            self.assertIn("nmcli device set wlan0 managed yes", commands)
+            self.assertIn("ip link set wlan0 up", commands)
+            self.assertTrue(any("nmcli device wifi hotspot" in command for command in commands))
 
 
 if __name__ == "__main__":

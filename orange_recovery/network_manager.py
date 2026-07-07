@@ -44,23 +44,64 @@ class NetworkManager:
 
         ip = self.config.hotspot.ip
         backend = self.config.network.preferred_backend
-        if backend in {"auto", "networkmanager"} and shutil.which("nmcli"):
+        if backend in {"auto", "networkmanager"} and (self.dry_run or shutil.which("nmcli")):
+            self._prepare_networkmanager_wifi(iface)
             self._run(["nmcli", "connection", "delete", "OrangeRecovery"], allow_failure=True)
-            self._run([
-                "nmcli",
-                "device",
-                "wifi",
-                "hotspot",
-                "ifname",
-                iface,
-                "con-name",
-                "OrangeRecovery",
-                "ssid",
-                ssid,
-                "password",
-                password,
-            ])
-            self._run(["nmcli", "connection", "modify", "OrangeRecovery", "ipv4.method", "shared", "ipv4.addresses", f"{ip}/24"])
+            try:
+                self._run([
+                    "nmcli",
+                    "device",
+                    "wifi",
+                    "hotspot",
+                    "ifname",
+                    iface,
+                    "con-name",
+                    "OrangeRecovery",
+                    "ssid",
+                    ssid,
+                    "password",
+                    password,
+                ])
+                self._run(["nmcli", "connection", "modify", "OrangeRecovery", "ipv4.method", "shared", "ipv4.addresses", f"{ip}/24"])
+            except RuntimeError as exc:
+                self.logger.warning("nmcli hotspot helper failed; trying explicit AP profile: %s", exc)
+                self._run(["nmcli", "connection", "delete", "OrangeRecovery"], allow_failure=True)
+                try:
+                    self._run([
+                        "nmcli",
+                        "connection",
+                        "add",
+                        "type",
+                        "wifi",
+                        "ifname",
+                        iface,
+                        "con-name",
+                        "OrangeRecovery",
+                        "autoconnect",
+                        "no",
+                        "ssid",
+                        ssid,
+                    ])
+                    self._run([
+                        "nmcli",
+                        "connection",
+                        "modify",
+                        "OrangeRecovery",
+                        "802-11-wireless.mode",
+                        "ap",
+                        "802-11-wireless.band",
+                        "bg",
+                        "ipv4.method",
+                        "shared",
+                        "ipv4.addresses",
+                        f"{ip}/24",
+                        "wifi-sec.key-mgmt",
+                        "wpa-psk",
+                        "wifi-sec.psk",
+                        password,
+                    ])
+                except RuntimeError as fallback_exc:
+                    raise RuntimeError(self._networkmanager_hint(iface, str(fallback_exc), str(exc))) from fallback_exc
             self._run(["nmcli", "connection", "up", "OrangeRecovery"])
             return
 
@@ -68,6 +109,44 @@ class NetworkManager:
         self._run(["ip", "addr", "flush", "dev", iface])
         self._run(["ip", "addr", "add", f"{ip}/24", "dev", iface])
         raise RuntimeError("Recovery hotspot requires NetworkManager/nmcli on this device.")
+
+    def _prepare_networkmanager_wifi(self, iface: str) -> None:
+        if self.dry_run:
+            self._run(["rfkill", "unblock", "wifi"], allow_failure=True)
+            self._run(["nmcli", "radio", "wifi", "on"], allow_failure=True)
+            self._run(["nmcli", "device", "set", iface, "managed", "yes"], allow_failure=True)
+            self._run(["ip", "link", "set", iface, "up"], allow_failure=True)
+            return
+
+        if shutil.which("rfkill"):
+            self._run(["rfkill", "unblock", "wifi"], allow_failure=True)
+        self._run(["nmcli", "radio", "wifi", "on"], allow_failure=True)
+        self._run(["nmcli", "device", "set", iface, "managed", "yes"], allow_failure=True)
+        if shutil.which("ip"):
+            self._run(["ip", "link", "set", iface, "up"], allow_failure=True)
+
+        state = self._networkmanager_device_state(iface)
+        if state in {"unavailable", "unmanaged"}:
+            raise RuntimeError(self._networkmanager_hint(iface, f"NetworkManager reports {iface} as {state}."))
+
+    def _networkmanager_device_state(self, iface: str) -> str:
+        output = self._run_capture(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"])
+        for line in output.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 3 and parts[0] == iface:
+                return parts[2].strip().lower()
+        return ""
+
+    def _networkmanager_hint(self, iface: str, error: str, original_error: str = "") -> str:
+        details = error
+        if original_error:
+            details = f"{details}; original hotspot error: {original_error}"
+        return (
+            f"{details} Recovery hotspot cannot use {iface} while NetworkManager reports it unavailable. "
+            f"Run: sudo rfkill unblock wifi; sudo nmcli radio wifi on; "
+            f"sudo nmcli device set {iface} managed yes; sudo ip link set {iface} up; "
+            "nmcli device status"
+        )
 
     def restore(self) -> None:
         iface = self.config.hotspot.interface or self.detect_wifi_interface()

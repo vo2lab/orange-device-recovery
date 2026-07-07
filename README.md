@@ -84,3 +84,26 @@ processing.
 All requests require the per-session bearer token when `api.require_token` is
 enabled. The server binds only to `api.host`, which must be the hotspot IP in
 production.
+
+## Hotspot Troubleshooting
+
+If recovery fails with `device is not available`, NetworkManager cannot use the
+Wi-Fi interface. On the dispenser, run:
+
+```bash
+sudo orange-recovery restore-network
+sudo rfkill unblock wifi
+sudo nmcli radio wifi on
+sudo nmcli device set wlan0 managed yes
+sudo ip link set wlan0 up
+nmcli device status
+sudo orange-recovery start
+```
+
+If `wlan0` still shows `unavailable` or `unmanaged`, restart NetworkManager
+from an Ethernet, local, or existing support tunnel session:
+
+```bash
+sudo systemctl restart NetworkManager
+nmcli device status
+```
