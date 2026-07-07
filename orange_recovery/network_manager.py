@@ -151,16 +151,13 @@ class NetworkManager:
 
     def restore(self) -> None:
         iface = self.config.hotspot.interface or self.detect_wifi_interface()
-        recovery_was_active = self._networkmanager_connection_active("OrangeRecovery")
-        recovery_ip_present = bool(iface and self._interface_has_ip(iface, self.config.hotspot.ip))
 
         if self.dry_run or shutil.which("nmcli"):
             self._run(["nmcli", "connection", "down", "OrangeRecovery"], allow_failure=True)
             self._run(["nmcli", "connection", "delete", "OrangeRecovery"], allow_failure=True)
-
-        if iface and (recovery_was_active or recovery_ip_present) and (self.dry_run or shutil.which("ip")):
-            self._run(["ip", "addr", "flush", "dev", iface], allow_failure=True)
-            if self.dry_run or shutil.which("nmcli"):
+            if iface:
+                self._run(["nmcli", "radio", "wifi", "on"], allow_failure=True)
+                self._run(["nmcli", "device", "set", iface, "managed", "yes"], allow_failure=True)
                 self._run(["nmcli", "device", "connect", iface], allow_failure=True)
 
     def detect_wifi_interface(self) -> str:
@@ -215,15 +212,3 @@ class NetworkManager:
             raise RuntimeError(message) from exc
         if result.returncode != 0 and not allow_failure:
             raise RuntimeError(f"Network command failed: {' '.join(command)}: {result.stderr.strip()}")
-
-    def _networkmanager_connection_active(self, name: str) -> bool:
-        output = self._run_capture(["nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show", "--active"])
-        for line in output.splitlines():
-            parts = line.split(":")
-            if parts and parts[0] == name:
-                return True
-        return False
-
-    def _interface_has_ip(self, iface: str, ip: str) -> bool:
-        output = self._run_capture(["ip", "-4", "addr", "show", "dev", iface])
-        return ip in output
