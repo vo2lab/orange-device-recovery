@@ -21,6 +21,7 @@ class NetworkManager:
         self.logger = logging.getLogger("orange_recovery.network")
         self.state_file = Path(config.paths.state_dir) / "network-state.json"
         self.commands_run: list[list[str]] = []
+        self.command_timeout_seconds = 30
 
     def save_current_state(self) -> dict[str, Any]:
         state = {
@@ -150,13 +151,17 @@ class NetworkManager:
 
     def restore(self) -> None:
         iface = self.config.hotspot.interface or self.detect_wifi_interface()
-        if shutil.which("nmcli"):
+        recovery_was_active = self._networkmanager_connection_active("OrangeRecovery")
+        recovery_ip_present = bool(iface and self._interface_has_ip(iface, self.config.hotspot.ip))
+
+        if self.dry_run or shutil.which("nmcli"):
             self._run(["nmcli", "connection", "down", "OrangeRecovery"], allow_failure=True)
             self._run(["nmcli", "connection", "delete", "OrangeRecovery"], allow_failure=True)
-        if iface:
+
+        if iface and (recovery_was_active or recovery_ip_present) and (self.dry_run or shutil.which("ip")):
             self._run(["ip", "addr", "flush", "dev", iface], allow_failure=True)
-        if shutil.which("systemctl"):
-            self._run(["systemctl", "restart", "NetworkManager"], allow_failure=True)
+            if self.dry_run or shutil.which("nmcli"):
+                self._run(["nmcli", "device", "connect", iface], allow_failure=True)
 
     def detect_wifi_interface(self) -> str:
         env_iface = os.environ.get("ORANGE_RECOVERY_WIFI_IFACE", "").strip()
@@ -174,7 +179,18 @@ class NetworkManager:
     def _run_capture(self, command: list[str]) -> str:
         if self.dry_run or not shutil.which(command[0]):
             return ""
-        result = subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=self.command_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            self.logger.warning("network capture timed out: %s", " ".join(command))
+            return ""
         return result.stdout.strip() or result.stderr.strip()
 
     def _run(self, command: list[str], allow_failure: bool = False) -> None:
@@ -182,6 +198,32 @@ class NetworkManager:
         self.logger.info("network command: %s", " ".join(command))
         if self.dry_run:
             return
-        result = subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=self.command_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            message = f"Network command timed out after {self.command_timeout_seconds}s: {' '.join(command)}"
+            if allow_failure:
+                self.logger.warning("%s", message)
+                return
+            raise RuntimeError(message) from exc
         if result.returncode != 0 and not allow_failure:
             raise RuntimeError(f"Network command failed: {' '.join(command)}: {result.stderr.strip()}")
+
+    def _networkmanager_connection_active(self, name: str) -> bool:
+        output = self._run_capture(["nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show", "--active"])
+        for line in output.splitlines():
+            parts = line.split(":")
+            if parts and parts[0] == name:
+                return True
+        return False
+
+    def _interface_has_ip(self, iface: str, ip: str) -> bool:
+        output = self._run_capture(["ip", "-4", "addr", "show", "dev", iface])
+        return ip in output

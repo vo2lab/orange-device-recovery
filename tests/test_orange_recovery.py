@@ -37,6 +37,11 @@ class FakeController:
         return True
 
 
+class ActiveRecoveryNetworkManager(NetworkManager):
+    def _networkmanager_connection_active(self, name: str) -> bool:
+        return name == "OrangeRecovery"
+
+
 class OrangeRecoveryTest(unittest.TestCase):
     def config(self, tmp: str) -> RecoveryConfig:
         cfg = RecoveryConfig()
@@ -219,6 +224,27 @@ class OrangeRecoveryTest(unittest.TestCase):
             self.assertIn("nmcli device set wlan0 managed yes", commands)
             self.assertIn("ip link set wlan0 up", commands)
             self.assertTrue(any("nmcli device wifi hotspot" in command for command in commands))
+
+    def test_restore_dry_run_does_not_flush_wifi_when_recovery_is_inactive(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            network = NetworkManager(cfg)
+            network.restore()
+
+            commands = [" ".join(command) for command in network.commands_run]
+            self.assertIn("nmcli connection down OrangeRecovery", commands)
+            self.assertIn("nmcli connection delete OrangeRecovery", commands)
+            self.assertNotIn("ip addr flush dev wlan0", commands)
+
+    def test_restore_dry_run_flushes_wifi_when_recovery_was_active(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            network = ActiveRecoveryNetworkManager(cfg)
+            network.restore()
+
+            commands = [" ".join(command) for command in network.commands_run]
+            self.assertIn("ip addr flush dev wlan0", commands)
+            self.assertIn("nmcli device connect wlan0", commands)
 
 
 if __name__ == "__main__":
