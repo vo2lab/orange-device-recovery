@@ -1,0 +1,13 @@
+[Unit]
+Description=Orange temporary local recovery API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ORANGE_RECOVERY_CONFIG=/etc/orange-recovery/config.yaml
+ExecStart=/usr/local/bin/orange-recovery start
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

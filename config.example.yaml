@@ -1,0 +1,50 @@
+machine_id: "BEEDLES-LAKE-2"
+
+recovery_trigger:
+  mode: "simple_code"
+  simple_code: "00000000"
+  code_length: 8
+  require_exact_match: true
+
+hotspot:
+  ssid_prefix: "ORANGE-RECOVERY"
+  ip: "192.168.50.1"
+  dhcp_start: "192.168.50.20"
+  dhcp_end: "192.168.50.100"
+  no_client_timeout_seconds: 300
+  connected_inactivity_timeout_seconds: 1200
+  password_mode: "random"
+
+api:
+  enabled: true
+  host: "192.168.50.1"
+  port: 8787
+  require_token: true
+  max_upload_mb: 50
+  prefer_fastapi: true
+
+repair:
+  max_zip_mb: 50
+  require_machine_match: true
+  allow_script_execution: false
+  allowed_target_prefixes:
+    - "/home/pi/orangelite/config/"
+    - "/etc/orange/"
+    - "/var/lib/orange/"
+
+services:
+  normal_service_name: "orange-service"
+
+network:
+  preferred_backend: "auto"
+  restore_on_exit: true
+  dry_run: false
+
+logging:
+  log_file: "/var/log/orange-recovery.log"
+  level: "INFO"
+
+paths:
+  state_dir: "/var/lib/orange-recovery"
+  upload_dir: "/var/lib/orange-recovery/uploads"
+  backup_dir: "/var/backups/orange-recovery"
