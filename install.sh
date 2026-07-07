@@ -124,7 +124,7 @@ hotspot:
   ip: "192.168.50.1"
   dhcp_start: "192.168.50.20"
   dhcp_end: "192.168.50.100"
-  no_client_timeout_seconds: 300
+  no_client_timeout_seconds: 60
   connected_inactivity_timeout_seconds: 1200
   password_mode: "random"
 
