@@ -1,11 +1,8 @@
-"""Local recovery HTTP API.
-
-The service has no browser UI and no template rendering. It exposes only JSON
-and ZIP responses for the phone/admin app.
-"""
+"""Local recovery HTTP API and minimal hotspot upload page."""
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import mimetypes
@@ -16,6 +13,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .security import bearer_token, token_matches
 
@@ -78,33 +76,41 @@ class RecoveryApiServer:
                 logging.getLogger("orange_recovery.api").info(format, *args)
 
             def do_GET(self) -> None:
+                path = urlparse(self.path).path
+                if path in {"/", "/index.html"}:
+                    controller.record_api_activity()
+                    self._html(upload_page(controller.session_token, controller.status(include_token=False)))
+                    return
                 if not self._authorized():
                     return
                 controller.record_api_activity()
-                if self.path == "/status":
+                if path == "/status":
                     self._json(controller.status(include_token=False))
-                elif self.path == "/progress":
+                elif path == "/progress":
                     self._json(controller.progress())
-                elif self.path == "/result":
+                elif path == "/result":
                     self._json(controller.result)
-                elif self.path == "/diagnostics":
+                elif path == "/diagnostics":
                     self._file(controller.diagnostics_zip(), "application/zip")
                 else:
                     self._json({"ok": False, "error": "not_found"}, HTTPStatus.NOT_FOUND)
 
             def do_POST(self) -> None:
+                path = urlparse(self.path).path
                 if not self._authorized():
                     return
-                if self.path == "/upload-repair":
-                    self._upload_repair()
-                elif self.path == "/apply-repair":
+                if path == "/upload-repair":
+                    self._upload_file(controller.save_and_validate_upload)
+                elif path == "/upload-repo":
+                    self._upload_file(controller.save_and_apply_repo_bundle)
+                elif path == "/apply-repair":
                     payload = self._json_body()
                     self._json(controller.apply_repair(confirm=bool(payload.get("confirm"))))
-                elif self.path == "/restart-service":
+                elif path == "/restart-service":
                     self._json(controller.restart_service())
-                elif self.path == "/rollback":
+                elif path == "/rollback":
                     self._json(controller.rollback())
-                elif self.path == "/exit-recovery":
+                elif path == "/exit-recovery":
                     controller.record_api_activity()
                     self._json({"ok": True, "state": "RESTORING_NETWORK", "message": "Recovery mode is stopping."})
                     controller.exit_recovery_async()
@@ -131,19 +137,19 @@ class RecoveryApiServer:
                 except json.JSONDecodeError:
                     return {}
 
-            def _upload_repair(self) -> None:
+            def _upload_file(self, callback: Any) -> None:
                 max_bytes = controller.config.api.max_upload_mb * 1024 * 1024
                 length = int(self.headers.get("Content-Length") or "0")
                 if length <= 0:
-                    self._json({"ok": False, "package_valid": False, "error": "empty_upload"}, HTTPStatus.BAD_REQUEST)
+                    self._json({"ok": False, "error": "empty_upload"}, HTTPStatus.BAD_REQUEST)
                     return
                 if length > max_bytes + 4096:
-                    self._json({"ok": False, "package_valid": False, "error": "upload_too_large"}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                    self._json({"ok": False, "error": "upload_too_large"}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
                     return
                 content_type = self.headers.get("Content-Type", "")
                 raw = self.rfile.read(length)
                 if "multipart/form-data" not in content_type:
-                    self._json({"ok": False, "package_valid": False, "error": "multipart_required"}, HTTPStatus.BAD_REQUEST)
+                    self._json({"ok": False, "error": "multipart_required"}, HTTPStatus.BAD_REQUEST)
                     return
                 message = BytesParser(policy=email_policy).parsebytes(
                     ("Content-Type: " + content_type + "\r\nMIME-Version: 1.0\r\n\r\n").encode("utf-8") + raw
@@ -156,14 +162,23 @@ class RecoveryApiServer:
                         continue
                     filename = part.get_filename() or "repair_package.zip"
                     body = part.get_payload(decode=True) or b""
-                    self._json(controller.save_and_validate_upload(filename, body))
+                    self._json(callback(filename, body))
                     return
-                self._json({"ok": False, "package_valid": False, "error": "file_field_missing"}, HTTPStatus.BAD_REQUEST)
+                self._json({"ok": False, "error": "file_field_missing"}, HTTPStatus.BAD_REQUEST)
 
             def _json(self, payload: dict[str, Any], status: int | HTTPStatus = HTTPStatus.OK) -> None:
                 body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
                 self.send_response(int(status))
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _html(self, markup: str, status: int | HTTPStatus = HTTPStatus.OK) -> None:
+                body = markup.encode("utf-8")
+                self.send_response(int(status))
+                self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -186,10 +201,93 @@ class RecoveryApiServer:
         return Handler
 
 
+def upload_page(session_token: str, status: dict[str, Any]) -> str:
+    token_json = json.dumps(session_token)
+    machine_id = html.escape(str(status.get("machine_id") or "this dispenser"))
+    state = html.escape(str(status.get("state") or "RECOVERY"))
+    message = html.escape(str(status.get("message") or "Choose the recovery repo ZIP downloaded from Range."))
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orange Recovery Upload</title>
+<style>
+:root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+body {{ background: #f4f8f8; color: #12343b; margin: 0; padding: 18px; }}
+main {{ background: #fff; border: 1px solid #d6e3e4; border-radius: 10px; box-shadow: 0 12px 30px rgba(18,52,59,.12); margin: 0 auto; max-width: 560px; padding: 18px; }}
+h1 {{ font-size: 1.45rem; margin: 0 0 6px; }}
+p {{ line-height: 1.45; }}
+.meta {{ background: #eef6f6; border-radius: 8px; display: grid; gap: 4px; margin: 14px 0; padding: 10px; }}
+label {{ display: grid; gap: 8px; font-weight: 700; margin: 16px 0; }}
+input[type=file] {{ border: 1px solid #bdd4d7; border-radius: 8px; padding: 10px; }}
+button {{ background: #247c86; border: 0; border-radius: 8px; color: #fff; font-size: 1rem; font-weight: 800; min-height: 44px; padding: 10px 14px; width: 100%; }}
+button:disabled {{ opacity: .65; }}
+pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; overflow: auto; padding: 10px; white-space: pre-wrap; }}
+</style>
+</head>
+<body>
+<main>
+<h1>Orange Recovery Upload</h1>
+<p>Upload the recovery repo ZIP that was downloaded from Range while the phone was on mobile data.</p>
+<div class="meta">
+<span><strong>Machine:</strong> {machine_id}</span>
+<span><strong>State:</strong> {state}</span>
+<span>{message}</span>
+</div>
+<form data-upload-form>
+<label>Recovery repo ZIP<input type="file" name="file" accept=".zip,application/zip" required></label>
+<button type="submit">Upload to Pi</button>
+</form>
+<p data-status>Waiting for ZIP file.</p>
+<pre data-result hidden></pre>
+</main>
+<script>
+(function () {{
+  var token = {token_json};
+  var form = document.querySelector('[data-upload-form]');
+  var button = form.querySelector('button');
+  var file = form.querySelector('input[type="file"]');
+  var status = document.querySelector('[data-status]');
+  var result = document.querySelector('[data-result]');
+  form.addEventListener('submit', function (event) {{
+    event.preventDefault();
+    if (!file.files.length) {{
+      status.textContent = 'Choose the ZIP file first.';
+      return;
+    }}
+    var data = new FormData();
+    data.append('file', file.files[0]);
+    button.disabled = true;
+    status.textContent = 'Uploading...';
+    result.hidden = true;
+    fetch('/upload-repo', {{
+      method: 'POST',
+      headers: {{'Authorization': 'Bearer ' + token}},
+      body: data
+    }}).then(function (response) {{
+      return response.json().then(function (payload) {{ return {{ok: response.ok, payload: payload}}; }});
+    }}).then(function (response) {{
+      var payload = response.payload || {{}};
+      result.hidden = false;
+      result.textContent = JSON.stringify(payload, null, 2);
+      status.textContent = payload.ok ? 'Upload installed. The Pi will restore its normal network shortly.' : 'Upload failed: ' + (payload.error || payload.message || 'unknown error');
+    }}).catch(function (error) {{
+      status.textContent = 'Upload failed: ' + error.message;
+    }}).finally(function () {{
+      button.disabled = false;
+    }});
+  }});
+}}());
+</script>
+</body>
+</html>"""
+
+
 def create_fastapi_app(controller: Any) -> Any:
     try:
         from fastapi import FastAPI, File, Header, HTTPException, UploadFile  # type: ignore
-        from fastapi.responses import FileResponse, JSONResponse  # type: ignore
+        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # type: ignore
     except Exception:
         return None
 
@@ -199,6 +297,11 @@ def create_fastapi_app(controller: Any) -> Any:
         if controller.config.api.require_token and not token_matches(bearer_token({"Authorization": authorization}), controller.session_token):
             raise HTTPException(status_code=401, detail="unauthorized")
         controller.record_api_activity()
+
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        controller.record_api_activity()
+        return upload_page(controller.session_token, controller.status(include_token=False))
 
     @app.get("/status")
     def status(authorization: str = Header(default="")) -> dict[str, Any]:
@@ -225,6 +328,12 @@ def create_fastapi_app(controller: Any) -> Any:
         require_auth(authorization)
         body = await file.read()
         return JSONResponse(controller.save_and_validate_upload(file.filename or "repair_package.zip", body))
+
+    @app.post("/upload-repo")
+    async def upload_repo(file: UploadFile = File(...), authorization: str = Header(default="")) -> JSONResponse:
+        require_auth(authorization)
+        body = await file.read()
+        return JSONResponse(controller.save_and_apply_repo_bundle(file.filename or "orange-device-recovery.zip", body))
 
     @app.post("/apply-repair")
     def apply_repair(payload: dict[str, Any], authorization: str = Header(default="")) -> dict[str, Any]:

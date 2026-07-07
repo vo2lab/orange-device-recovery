@@ -80,6 +80,13 @@ class OrangeRecoveryTest(unittest.TestCase):
             for name, body in files.items():
                 zf.writestr(name, body)
 
+    def repo_zip(self, path: Path) -> None:
+        root = "orange-device-recovery-main"
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{root}/install.sh", b"#!/usr/bin/env bash\nexit 0\n")
+            zf.writestr(f"{root}/orange_recovery/api_server.py", b"# api\n")
+            zf.writestr(f"{root}/orange_recovery/recovery_controller.py", b"# controller\n")
+
     def test_qr_trigger_consumes_only_exact_configured_code(self):
         cfg = RecoveryConfig()
         fake = FakeController()
@@ -208,6 +215,65 @@ class OrangeRecoveryTest(unittest.TestCase):
                 payload = json.loads(response.read().decode("utf-8"))
                 self.assertTrue(payload["ok"], payload)
                 self.assertTrue(payload["package_valid"], payload)
+                conn.close()
+            finally:
+                server.stop()
+
+    def test_api_serves_upload_page_without_auth(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            controller = RecoveryController(cfg)
+            controller.active = True
+            controller.session_token = "page-token"
+            server = RecoveryApiServer(controller, "127.0.0.1", 0, prefer_fastapi=False)
+            server.start()
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
+                conn.request("GET", "/")
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                html = response.read().decode("utf-8")
+                self.assertIn("Orange Recovery Upload", html)
+                self.assertIn("/upload-repo", html)
+                conn.close()
+            finally:
+                server.stop()
+
+    def test_api_uploads_repo_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            package = Path(tmp) / "orange-device-recovery.zip"
+            self.repo_zip(package)
+            controller = RecoveryController(cfg)
+            controller.active = True
+            controller.session_token = "repo-token"
+            server = RecoveryApiServer(controller, "127.0.0.1", 0, prefer_fastapi=False)
+            server.start()
+            try:
+                boundary = "----orange-recovery-repo-test"
+                body = io.BytesIO()
+                body.write(f"--{boundary}\r\n".encode("ascii"))
+                body.write(b'Content-Disposition: form-data; name="file"; filename="orange-device-recovery.zip"\r\n')
+                body.write(b"Content-Type: application/zip\r\n\r\n")
+                body.write(package.read_bytes())
+                body.write(f"\r\n--{boundary}--\r\n".encode("ascii"))
+
+                conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/upload-repo",
+                    body=body.getvalue(),
+                    headers={
+                        "Authorization": "Bearer repo-token",
+                        "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    },
+                )
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                payload = json.loads(response.read().decode("utf-8"))
+                self.assertTrue(payload["ok"], payload)
+                self.assertTrue(payload["repo_bundle_valid"], payload)
+                self.assertFalse(payload["installed"], payload)
                 conn.close()
             finally:
                 server.stop()

@@ -17,6 +17,7 @@ from .display import DisplayAnnouncer
 from .hotspot import RecoveryHotspot
 from .network_manager import NetworkManager
 from .repair_package import RepairPackageManager, ValidationResult
+from .repo_bundle import RepoBundleInstaller
 from .security import generate_session_token
 from .service_control import ServiceControl
 
@@ -51,6 +52,7 @@ class RecoveryController:
         self.hotspot = RecoveryHotspot(config, self.network)
         self.service_control = ServiceControl(config.services.normal_service_name, dry_run=config.network.dry_run)
         self.package_manager = RepairPackageManager(config, self.service_control)
+        self.repo_bundle_installer = RepoBundleInstaller(config)
         self.display = DisplayAnnouncer()
         self.lock = threading.RLock()
         self.state = IDLE
@@ -179,6 +181,38 @@ class RecoveryController:
             self.result = {"ok": False, "state": FAILED, "message": self.validation.error}
             self._set_state(FAILED, self.validation.error)
         return self.validation.as_response()
+
+    def save_and_apply_repo_bundle(self, filename: str, body: bytes) -> dict[str, Any]:
+        self.record_api_activity()
+        max_bytes = self.config.api.max_upload_mb * 1024 * 1024
+        if len(body) > max_bytes:
+            return {"ok": False, "repo_bundle_valid": False, "error": "upload_too_large"}
+        upload_dir = Path(self.config.paths.upload_dir)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(filename or "orange-device-recovery.zip").name
+        path = upload_dir / f"{int(time.time())}-{safe_name}"
+        path.write_bytes(body)
+        os.chmod(path, 0o600)
+        self.uploaded_package_path = str(path)
+        self._set_state(PACKAGE_UPLOADED, "Recovery repo bundle uploaded.")
+        self._set_state(VALIDATING_PACKAGE, "Validating recovery repo bundle.")
+        self._set_state(APPLYING_REPAIR, "Installing recovery repo bundle.", step="install_repo_bundle", percent=50)
+        result = self.repo_bundle_installer.install(str(path))
+        payload = result.as_response()
+        if result.ok:
+            self.result = {
+                "ok": True,
+                "state": COMPLETE,
+                "message": "Recovery repo bundle installed. Restoring normal network.",
+                "reboot_required": False,
+            }
+            self._set_state(COMPLETE, self.result["message"], step="complete", percent=100)
+            self.exit_recovery_async(delay_seconds=8)
+        else:
+            self.result = {"ok": False, "state": FAILED, "message": result.error or result.message, "reboot_required": False}
+            self._set_state(FAILED, self.result["message"], step="failed", percent=100)
+        payload["state"] = self.state
+        return payload
 
     def apply_repair(self, confirm: bool) -> dict[str, Any]:
         self.record_api_activity()

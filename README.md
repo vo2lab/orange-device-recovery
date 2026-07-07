@@ -1,9 +1,10 @@
 # Orange Device Recovery
 
-Orange Device Recovery is a dispenser-side, hotspot-bound recovery API for
-repair packages. The Raspberry Pi does not serve an HTML portal, render
-templates, or provide SMB shares. The o:range phone app or admin portal owns the
-UI.
+Orange Device Recovery is a dispenser-side, hotspot-bound recovery service for
+repair packages and recovery repo ZIP bundles. The o:range phone app or admin
+portal owns the technician workflow. During recovery, the Raspberry Pi also
+serves a minimal local upload page so a phone can transfer the ZIP after joining
+the Pi hotspot.
 
 ## Install
 
@@ -52,10 +53,10 @@ Set `PURGE_CONFIG=1` to remove config, uploads, state, and backups.
 3. `orange_recovery.handle_scanned_qr(code)` consumes a matching trigger,
    starts a temporary hotspot, and pauses normal QR processing.
 4. The phone joins `ORANGE-RECOVERY-<MACHINE_ID>`.
-5. The phone calls `http://192.168.50.1:8787` with
-   `Authorization: Bearer <session_token>`.
-6. The phone uploads, validates, applies, monitors, and exits recovery through
-   the JSON API.
+5. The phone opens `http://192.168.50.1:8787`.
+6. The local page asks for the ZIP file and uploads it to the Pi.
+7. The Pi validates and applies the uploaded recovery repo bundle, then restores
+   normal networking.
 
 ## Integration
 
@@ -79,6 +80,7 @@ processing.
 
 - `GET /status`
 - `POST /upload-repair` with multipart `file=repair_package.zip`
+- `POST /upload-repo` with multipart `file=orange-device-recovery.zip`
 - `POST /apply-repair` with `{"confirm": true}`
 - `GET /progress`
 - `GET /result`
@@ -90,6 +92,10 @@ processing.
 All requests require the per-session bearer token when `api.require_token` is
 enabled. The server binds only to `api.host`, which must be the hotspot IP in
 production.
+
+`GET /` serves the minimal browser upload page used by the mobile transfer flow.
+The page embeds the current session token and posts the chosen repo ZIP to
+`/upload-repo`.
 
 ## Hotspot Troubleshooting
 

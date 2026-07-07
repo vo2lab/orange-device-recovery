@@ -61,6 +61,7 @@ files=(
   "orange_recovery/qr_trigger.py"
   "orange_recovery/recovery_controller.py"
   "orange_recovery/repair_package.py"
+  "orange_recovery/repo_bundle.py"
   "orange_recovery/rollback.py"
   "orange_recovery/security.py"
   "orange_recovery/service_control.py"
