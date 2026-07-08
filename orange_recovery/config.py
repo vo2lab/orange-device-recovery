@@ -179,6 +179,8 @@ class RepairConfig:
     require_machine_match: bool = True
     allow_script_execution: bool = False
     orangelite_root: str = "/home/pi/orangelite"
+    upload_timeout_seconds: int = 120
+    reboot_on_exit: bool = True
     allowed_target_prefixes: list[str] = field(default_factory=lambda: [
         "/home/pi/orangelite/config/",
         "/etc/orange/",
@@ -250,7 +252,7 @@ def config_from_dict(raw: dict[str, Any]) -> RecoveryConfig:
         no_client_timeout_seconds=_int(hotspot.get("no_client_timeout_seconds"), cfg.hotspot.no_client_timeout_seconds),
         connected_inactivity_timeout_seconds=_int(hotspot.get("connected_inactivity_timeout_seconds"), cfg.hotspot.connected_inactivity_timeout_seconds),
         password_mode=str(hotspot.get("password_mode") or cfg.hotspot.password_mode),
-        password=str(hotspot.get("password") or ""),
+        password=str(hotspot.get("password") or cfg.hotspot.password),
         interface=str(hotspot.get("interface") or ""),
     )
 
@@ -271,6 +273,8 @@ def config_from_dict(raw: dict[str, Any]) -> RecoveryConfig:
         require_machine_match=_bool(repair.get("require_machine_match"), cfg.repair.require_machine_match),
         allow_script_execution=_bool(repair.get("allow_script_execution"), cfg.repair.allow_script_execution),
         orangelite_root=str(repair.get("orangelite_root") or cfg.repair.orangelite_root),
+        upload_timeout_seconds=_int(repair.get("upload_timeout_seconds"), cfg.repair.upload_timeout_seconds),
+        reboot_on_exit=_bool(repair.get("reboot_on_exit"), cfg.repair.reboot_on_exit),
         allowed_target_prefixes=[str(item) for item in prefixes] if isinstance(prefixes, list) else cfg.repair.allowed_target_prefixes,
     )
 
@@ -318,5 +322,13 @@ def load_config(path: str | None = None) -> RecoveryConfig:
         cfg.api.port = _int(os.environ["ORANGE_RECOVERY_API_PORT"], cfg.api.port)
     if os.environ.get("ORANGE_RECOVERY_ORANGELITE_ROOT"):
         cfg.repair.orangelite_root = os.environ["ORANGE_RECOVERY_ORANGELITE_ROOT"].strip()
+    if os.environ.get("ORANGE_RECOVERY_HOTSPOT_PASSWORD"):
+        cfg.hotspot.password = os.environ["ORANGE_RECOVERY_HOTSPOT_PASSWORD"].strip()
+        cfg.hotspot.password_mode = "configured"
+    if os.environ.get("ORANGE_RECOVERY_REPAIR_TIMEOUT_SECONDS"):
+        cfg.repair.upload_timeout_seconds = _int(
+            os.environ["ORANGE_RECOVERY_REPAIR_TIMEOUT_SECONDS"],
+            cfg.repair.upload_timeout_seconds,
+        )
 
     return cfg

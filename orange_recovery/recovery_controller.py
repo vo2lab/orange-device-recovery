@@ -71,13 +71,21 @@ class RecoveryController:
         self.api_server: Any = None
         self.monitor_thread: threading.Thread | None = None
         self.stop_event = threading.Event()
+        self.repair_mode = False
+        self.reboot_when_done = False
 
-    def start(self, trigger_code: str = "") -> bool:
+    def start(self, trigger_code: str = "", repair_mode: bool = False) -> bool:
         with self.lock:
             if self.active:
                 self.logger.info("recovery already active; duplicate trigger ignored")
                 return False
             self.active = True
+            self.repair_mode = repair_mode
+            self.reboot_when_done = repair_mode and self.config.repair.reboot_on_exit
+            if repair_mode:
+                timeout = max(15, int(self.config.repair.upload_timeout_seconds))
+                self.config.hotspot.no_client_timeout_seconds = timeout
+                self.config.hotspot.connected_inactivity_timeout_seconds = timeout
             self.stop_event.clear()
             self.session_token = generate_session_token()
             self.session_password = self.hotspot.password()
@@ -87,21 +95,27 @@ class RecoveryController:
             self._write_state()
 
         try:
+            if repair_mode:
+                self._set_state(STARTING_HOTSPOT, "Stopping dispenser service for repair.")
+                self.service_control.stop_for_repair()
             self._set_state(STARTING_HOTSPOT, "Starting recovery hotspot.")
-            self.ssid = self.hotspot.ssid()
+            self.ssid = self.hotspot.ssid(hostname_only=repair_mode)
             self.display.announce_recovery_active(
                 self.ssid,
                 self.session_password,
                 self.config.hotspot.no_client_timeout_seconds,
                 active=False,
             )
-            self.ssid = self.hotspot.start(self.session_password)
-            self.display.announce_recovery_active(
-                self.ssid,
-                self.session_password,
-                self.config.hotspot.no_client_timeout_seconds,
-                active=True,
-            )
+            self.ssid = self.hotspot.start(self.session_password, ssid=self.ssid)
+            if repair_mode:
+                self.display.announce_follow_mobile()
+            else:
+                self.display.announce_recovery_active(
+                    self.ssid,
+                    self.session_password,
+                    self.config.hotspot.no_client_timeout_seconds,
+                    active=True,
+                )
             self._set_state(WAITING_FOR_CLIENT, "Waiting for phone connection.")
             self._start_api()
             self.monitor_thread = threading.Thread(target=self._monitor_timeouts, name="orange-recovery-monitor", daemon=True)
@@ -186,7 +200,10 @@ class RecoveryController:
         self.record_api_activity()
         max_bytes = self.config.api.max_upload_mb * 1024 * 1024
         if len(body) > max_bytes:
-            return {"ok": False, "repo_bundle_valid": False, "error": "upload_too_large"}
+            payload = {"ok": False, "repo_bundle_valid": False, "error": "upload_too_large"}
+            if self.repair_mode:
+                return self._finish_failed_repair("Upload is too large.", payload)
+            return payload
         upload_dir = Path(self.config.paths.upload_dir)
         upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = Path(filename or "orangelite-python-scripts.zip").name
@@ -197,23 +214,50 @@ class RecoveryController:
         self._set_state(PACKAGE_UPLOADED, "Orangelite Python scripts uploaded.")
         self._set_state(VALIDATING_PACKAGE, "Validating Orangelite Python scripts.")
         self._set_state(APPLYING_REPAIR, "Backing up and replacing Orangelite Python scripts.", step="install_orangelite_scripts", percent=50)
-        result = self.repo_bundle_installer.install(str(path))
+        try:
+            result = self.repo_bundle_installer.install(str(path))
+        except Exception as exc:
+            self.logger.exception("Orangelite script repair failed")
+            return self._finish_failed_repair(str(exc), {"ok": False, "repo_bundle_valid": False, "error": "install_exception"})
         payload = result.as_response()
         if result.ok:
             self.result = {
                 "ok": True,
                 "state": COMPLETE,
-                "message": str(result.message),
-                "reboot_required": False,
+                "message": "Repair complete. Reconnect this phone to normal Wi-Fi now. The dispenser will reboot.",
+                "reboot_required": self.repair_mode,
             }
             self._set_state(COMPLETE, self.result["message"], step="complete", percent=100)
             payload["disconnecting"] = True
-            payload["disconnect_delay_seconds"] = 12
-            self.exit_recovery_async(delay_seconds=12)
+            payload["disconnect_delay_seconds"] = 8 if self.repair_mode else 12
+            payload["reboot_required"] = self.repair_mode
+            self.exit_recovery_async(delay_seconds=payload["disconnect_delay_seconds"])
         else:
-            self.result = {"ok": False, "state": FAILED, "message": result.error or result.message, "reboot_required": False}
+            self.result = {
+                "ok": False,
+                "state": FAILED,
+                "message": str(result.error or result.message),
+                "reboot_required": self.repair_mode,
+            }
             self._set_state(FAILED, self.result["message"], step="failed", percent=100)
+            if self.repair_mode:
+                payload["disconnecting"] = True
+                payload["disconnect_delay_seconds"] = 8
+                payload["reboot_required"] = True
+                self.exit_recovery_async(delay_seconds=8)
         payload["state"] = self.state
+        return payload
+
+    def _finish_failed_repair(self, message: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self.result = {"ok": False, "state": FAILED, "message": message, "reboot_required": self.repair_mode}
+        self._set_state(FAILED, message, step="failed", percent=100)
+        payload["state"] = self.state
+        payload["message"] = message
+        if self.repair_mode:
+            payload["disconnecting"] = True
+            payload["disconnect_delay_seconds"] = 8
+            payload["reboot_required"] = True
+            self.exit_recovery_async(delay_seconds=8)
         return payload
 
     def apply_repair(self, confirm: bool) -> dict[str, Any]:
@@ -292,6 +336,9 @@ class RecoveryController:
             self.state = str(self.result.get("state") or COMPLETE)
             self.message = str(self.result.get("message") or "Recovery mode exited.")
             self._write_state()
+        if self.reboot_when_done:
+            self.display.write_lines(["Recovery finished.", "Rebooting dispenser now."])
+            self.service_control.reboot()
 
     def restore_network(self) -> dict[str, Any]:
         self.hotspot.stop()

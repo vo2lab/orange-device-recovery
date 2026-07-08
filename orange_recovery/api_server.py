@@ -267,8 +267,8 @@ pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; font-size: .82re
 <h2 id="steps-title">Steps on this page</h2>
 <ol class="steps">
 <li><span><strong>Choose the ZIP file</strong><span>Tap the large button below. The file is usually in Downloads or Files.</span></span></li>
-<li><span><strong>Upload it to the dispenser</strong><span>Tap Upload ZIP. Keep this page open until it says the repair is done.</span></span></li>
-<li><span><strong>Reconnect to normal Wi-Fi</strong><span>When the upload finishes, reconnect this phone to normal Wi-Fi. The dispenser hotspot will turn off shortly.</span></span></li>
+<li><span><strong>Upload it to the dispenser</strong><span>Tap Upload ZIP. Keep this page open until it says the repair is done. Repair mode waits up to 2 minutes.</span></span></li>
+<li><span><strong>Reconnect to normal Wi-Fi</strong><span>When the upload finishes, reconnect this phone to normal Wi-Fi. The dispenser hotspot will turn off and the dispenser will reboot.</span></span></li>
 </ol>
 </section>
 <form data-upload-form>
@@ -334,7 +334,7 @@ pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; font-size: .82re
       details.hidden = false;
       result.textContent = JSON.stringify(payload, null, 2);
       if (payload.ok) {{
-        setStatus(payload.message || 'Done. Reconnect this phone to normal Wi-Fi now. The dispenser hotspot will turn off shortly.', 'success');
+        setStatus(payload.message || 'Done. Reconnect this phone to normal Wi-Fi now. The dispenser hotspot will turn off and the dispenser will reboot.', 'success');
         button.textContent = 'Upload another ZIP';
         return;
       }}

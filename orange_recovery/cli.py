@@ -35,12 +35,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Orange dispenser local recovery API")
     parser.add_argument("--config", default=None, help="Path to /etc/orange-recovery/config.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Log network/service commands without executing them")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument("-repair", "--repair", dest="repair_mode", action="store_true", help="Start the QR-triggered repair flow")
+    sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("status")
     trigger = sub.add_parser("trigger-code")
     trigger.add_argument("code")
     sub.add_parser("start")
+    sub.add_parser("repair")
     sub.add_parser("stop")
     sub.add_parser("restore-network")
     validate = sub.add_parser("validate-package")
@@ -52,6 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("serve")
 
     args = parser.parse_args(argv)
+    if args.repair_mode:
+        args.command = "repair"
+    if not args.command:
+        parser.error("a command is required")
     config = load_config(args.config)
     if args.dry_run:
         config.network.dry_run = True
@@ -75,9 +81,9 @@ def main(argv: list[str] | None = None) -> int:
             controller.wait_forever()
         return 0 if consumed else 2
 
-    if args.command in {"start", "serve"}:
+    if args.command in {"start", "serve", "repair"}:
         controller = RecoveryController(config)
-        ok = controller.start()
+        ok = controller.start(repair_mode=args.command == "repair")
         _print_json(controller.status(include_token=True))
         if ok:
             controller.wait_forever()

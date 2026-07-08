@@ -29,6 +29,12 @@ class DisplayAnnouncer:
         ]
         self.write_lines(lines)
 
+    def announce_follow_mobile(self) -> None:
+        self.write_lines([
+            "RECOVERY MODE ACTIVE",
+            "Please follow instructions on mobile",
+        ])
+
     def write_lines(self, lines: list[str]) -> None:
         message = "\n".join(lines)
         self.logger.info("%s", message.replace("\n", " | "))

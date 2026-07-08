@@ -13,12 +13,14 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from orange_recovery.api_server import RecoveryApiServer
-from orange_recovery.config import RecoveryConfig
+from orange_recovery.config import RecoveryConfig, config_from_dict
+from orange_recovery.display import DisplayAnnouncer
 from orange_recovery.hotspot import RecoveryHotspot
 from orange_recovery.network_manager import NetworkManager
 from orange_recovery.qr_trigger import RecoveryQrHandler
@@ -118,6 +120,33 @@ class OrangeRecoveryTest(unittest.TestCase):
     def test_default_hotspot_password_is_simple_configured_value(self):
         cfg = RecoveryConfig()
         self.assertEqual(RecoveryHotspot(cfg, NetworkManager(cfg, dry_run=True)).password(), "orange1234")
+
+    def test_config_loader_keeps_default_repair_password_and_timeout(self):
+        cfg = config_from_dict({})
+        self.assertEqual(cfg.hotspot.password, "orange1234")
+        self.assertEqual(cfg.repair.upload_timeout_seconds, 120)
+        self.assertTrue(cfg.repair.reboot_on_exit)
+
+    def test_repair_hotspot_uses_hostname_ssid(self):
+        cfg = RecoveryConfig()
+        with patch("orange_recovery.hotspot.socket.gethostname", return_value="orange test unit"):
+            self.assertEqual(RecoveryHotspot(cfg, NetworkManager(cfg, dry_run=True)).ssid(hostname_only=True), "orange-test-unit")
+
+    def test_repair_mode_sets_two_minute_timeout_hostname_ssid_and_display_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg.api.enabled = False
+            cfg.repair.upload_timeout_seconds = 120
+            controller = RecoveryController(cfg)
+            controller.display = DisplayAnnouncer(str(Path(tmp) / "display.txt"))
+            with patch("orange_recovery.hotspot.socket.gethostname", return_value="orange-host"):
+                self.assertTrue(controller.start(repair_mode=True))
+            self.assertEqual(controller.ssid, "orange-host")
+            self.assertEqual(cfg.hotspot.no_client_timeout_seconds, 120)
+            self.assertEqual(cfg.hotspot.connected_inactivity_timeout_seconds, 120)
+            self.assertTrue(controller.reboot_when_done)
+            self.assertIn("Please follow instructions on mobile", (Path(tmp) / "display.txt").read_text(encoding="utf-8"))
+            controller.exit_recovery()
 
     def test_package_validation_rejects_malicious_zip_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

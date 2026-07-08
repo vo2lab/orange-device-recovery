@@ -48,31 +48,49 @@ Set `PURGE_CONFIG=1` to remove config, uploads, state, and backups.
 
 ## Flow
 
-1. The admin app shows the configured 8-digit recovery trigger code.
-2. The dispenser QR reader scans that code before normal customer QR handling.
-3. `orange_recovery.handle_scanned_qr(code)` consumes a matching trigger,
-   starts a temporary hotspot, and pauses normal QR processing.
-4. The phone joins `ORANGE-RECOVERY-<MACHINE_ID>`.
-5. The phone opens `http://192.168.50.1:8787`.
-6. The local page asks for the ZIP file and uploads it to the Pi.
-7. The Pi validates the uploaded script bundle, backs up existing matching
+1. The Range repair view downloads the marked-working Orangelite Python scripts ZIP.
+2. The repair view shows a QR code containing the exact text `REPAIR`.
+3. `orange_main.py` scans `REPAIR`, displays `Please follow instructions on mobile`,
+   and starts `orange-recovery -repair` outside the normal Orange service cgroup.
+4. Repair mode stops Orange processes, starts a temporary hotspot named after the
+   dispenser hostname, and waits up to 2 minutes for the phone upload.
+5. The phone joins the hostname hotspot with password `orange1234`, unless the
+   device config overrides `hotspot.password`.
+6. The phone opens `http://192.168.50.1:8787`.
+7. The local page asks for the ZIP file and uploads it to the Pi.
+8. The Pi validates the uploaded script bundle, backs up existing matching
    files, replaces them in `/home/pi/orangelite`, tells the phone to reconnect to
-   normal Wi-Fi, then restores normal networking.
+   normal Wi-Fi, restores normal networking, and reboots.
 
 ## Integration
 
 ```python
-import orange_recovery
+import subprocess
 
-if orange_recovery.handle_scanned_qr(scanned_code):
+if normalize_reader_code(scanned_code).upper() == "REPAIR":
+    subprocess.run([
+        "sudo",
+        "systemd-run",
+        "--unit",
+        "orange-recovery-repair",
+        "--collect",
+        "orange-recovery",
+        "-repair",
+    ], check=False)
     return
 
 process_normal_customer_qr(scanned_code)
 ```
 
-Only an exact configured 8-digit numeric code starts recovery. Non-matching QR
-values pass through unchanged. While recovery is active, QR processing remains
-paused.
+The current production handoff is the command-line repair entrypoint:
+
+```bash
+sudo orange-recovery -repair
+```
+
+Only an exact `REPAIR` QR payload should call that entrypoint from the dispenser
+runtime. Non-matching QR values pass through unchanged. While repair is active,
+normal QR processing is stopped.
 
 The dispenser runtime must call this before normal payment/customer QR
 processing.

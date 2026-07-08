@@ -143,6 +143,8 @@ repair:
   require_machine_match: true
   allow_script_execution: false
   orangelite_root: "/home/pi/orangelite"
+  upload_timeout_seconds: 120
+  reboot_on_exit: true
   allowed_target_prefixes:
     - "/home/pi/orangelite/config/"
     - "/etc/orange/"
