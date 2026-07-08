@@ -213,34 +213,77 @@ def upload_page(session_token: str, status: dict[str, Any]) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orange Recovery Upload</title>
 <style>
-:root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-body {{ background: #f4f8f8; color: #12343b; margin: 0; padding: 18px; }}
-main {{ background: #fff; border: 1px solid #d6e3e4; border-radius: 10px; box-shadow: 0 12px 30px rgba(18,52,59,.12); margin: 0 auto; max-width: 560px; padding: 18px; }}
-h1 {{ font-size: 1.45rem; margin: 0 0 6px; }}
-p {{ line-height: 1.45; }}
-.meta {{ background: #eef6f6; border-radius: 8px; display: grid; gap: 4px; margin: 14px 0; padding: 10px; }}
-label {{ display: grid; gap: 8px; font-weight: 700; margin: 16px 0; }}
-input[type=file] {{ border: 1px solid #bdd4d7; border-radius: 8px; padding: 10px; }}
-button {{ background: #247c86; border: 0; border-radius: 8px; color: #fff; font-size: 1rem; font-weight: 800; min-height: 44px; padding: 10px 14px; width: 100%; }}
-button:disabled {{ opacity: .65; }}
-pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; overflow: auto; padding: 10px; white-space: pre-wrap; }}
+:root {{ color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 18px; }}
+* {{ box-sizing: border-box; }}
+body {{ background: #f4f8f8; color: #12343b; margin: 0; padding: 16px; }}
+main {{ background: #fff; border: 1px solid #d6e3e4; border-radius: 10px; box-shadow: 0 12px 30px rgba(18,52,59,.12); margin: 0 auto; max-width: 680px; padding: 20px; }}
+h1 {{ color: #0d2d33; font-size: 2rem; letter-spacing: 0; line-height: 1.05; margin: 0 0 10px; }}
+h2 {{ color: #0d2d33; font-size: 1.25rem; letter-spacing: 0; margin: 22px 0 10px; }}
+p {{ font-size: 1rem; line-height: 1.55; }}
+.lede {{ color: #12343b; font-size: 1.12rem; margin: 0 0 16px; }}
+.meta {{ background: #eef6f6; border: 1px solid #cfe0e2; border-radius: 8px; display: grid; gap: 7px; margin: 16px 0; padding: 14px; }}
+.meta span {{ line-height: 1.35; overflow-wrap: anywhere; }}
+.steps {{ counter-reset: step; display: grid; list-style: none; margin: 0 0 18px; padding: 0; }}
+.steps li {{ align-items: start; border-top: 1px solid #d6e3e4; counter-increment: step; display: grid; gap: 12px; grid-template-columns: 46px minmax(0, 1fr); padding: 16px 0; }}
+.steps li:first-child {{ border-top: 0; padding-top: 4px; }}
+.steps li::before {{ align-items: center; background: #247c86; border-radius: 50%; color: #fff; content: counter(step); display: inline-flex; font-size: 1.1rem; font-weight: 900; height: 42px; justify-content: center; line-height: 1; width: 42px; }}
+.steps strong {{ color: #0d2d33; display: block; font-size: 1.1rem; line-height: 1.25; margin-bottom: 4px; }}
+.steps span {{ display: block; line-height: 1.5; }}
+.file-picker {{ background: #fff; border: 2px solid #247c86; border-radius: 10px; cursor: pointer; display: grid; gap: 7px; margin: 18px 0 12px; min-height: 74px; padding: 17px; position: relative; }}
+.file-picker:focus-within, .file-picker:hover {{ box-shadow: 0 0 0 4px rgba(36,124,134,.18); }}
+.file-picker-title {{ color: #0d2d33; font-size: 1.18rem; font-weight: 900; }}
+.file-picker-help {{ color: #45666d; font-size: .96rem; line-height: 1.35; overflow-wrap: anywhere; }}
+.file-picker.has-file {{ background: #eef9f4; border-color: #247c55; }}
+.file-input {{ cursor: pointer; height: 100%; inset: 0; opacity: 0; position: absolute; width: 100%; }}
+.upload-button {{ background: #247c86; border: 0; border-radius: 10px; color: #fff; cursor: pointer; font-size: 1.12rem; font-weight: 900; min-height: 60px; padding: 16px; width: 100%; }}
+.upload-button:disabled {{ cursor: wait; opacity: .65; }}
+.status {{ background: #eef6f6; border: 1px solid #cfe0e2; border-radius: 8px; color: #12343b; font-size: 1rem; font-weight: 800; line-height: 1.45; margin: 16px 0 0; padding: 14px; }}
+.status.is-success {{ background: #e9f8ef; border-color: #aedcc0; color: #12512d; }}
+.status.is-error {{ background: #fff1ef; border-color: #f0b8ae; color: #7a2418; }}
+details {{ margin-top: 14px; }}
+summary {{ cursor: pointer; font-weight: 800; }}
+pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; font-size: .82rem; overflow: auto; padding: 10px; white-space: pre-wrap; }}
+@media (max-width: 480px) {{
+  body {{ padding: 12px; }}
+  main {{ padding: 16px; }}
+  h1 {{ font-size: 1.85rem; }}
+  .lede {{ font-size: 1.08rem; }}
+  .steps li {{ grid-template-columns: 44px minmax(0, 1fr); padding: 17px 0; }}
+  .file-picker {{ min-height: 78px; padding: 18px; }}
+  .upload-button {{ min-height: 62px; }}
+}}
 </style>
 </head>
 <body>
 <main>
 <h1>Orange Recovery Upload</h1>
-<p>Upload the Orangelite Python scripts ZIP that was downloaded from Range while the phone was on mobile data.</p>
+<p class="lede">Choose the repair ZIP from your phone and upload it to this dispenser.</p>
 <div class="meta">
 <span><strong>Machine:</strong> {machine_id}</span>
 <span><strong>State:</strong> {state}</span>
 <span>{message}</span>
 </div>
+<section aria-labelledby="steps-title">
+<h2 id="steps-title">Steps on this page</h2>
+<ol class="steps">
+<li><span><strong>Choose the ZIP file</strong><span>Tap the large button below. The file is usually in Downloads or Files.</span></span></li>
+<li><span><strong>Upload it to the dispenser</strong><span>Tap Upload ZIP. Keep this page open until it says the repair is done.</span></span></li>
+<li><span><strong>Reconnect to normal Wi-Fi</strong><span>When the upload finishes, reconnect this phone to normal Wi-Fi. The dispenser hotspot will turn off shortly.</span></span></li>
+</ol>
+</section>
 <form data-upload-form>
-<label>Orangelite Python scripts ZIP<input type="file" name="file" accept=".zip,application/zip" required></label>
-<button type="submit">Upload to Pi</button>
+<label class="file-picker" for="repair-file" data-file-picker>
+<span class="file-picker-title">Choose ZIP file</span>
+<span class="file-picker-help" data-file-name>Tap here and select the ZIP you downloaded in Range.</span>
+<input class="file-input" id="repair-file" type="file" name="file" accept=".zip,application/zip" required>
+</label>
+<button class="upload-button" type="submit">Upload ZIP</button>
 </form>
-<p data-status>Waiting for ZIP file.</p>
-<pre data-result hidden></pre>
+<p class="status" data-status aria-live="polite">Waiting for you to choose the ZIP file.</p>
+<details data-details hidden>
+<summary>Technical details</summary>
+<pre data-result></pre>
+</details>
 </main>
 <script>
 (function () {{
@@ -248,19 +291,38 @@ pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; overflow: auto; 
   var form = document.querySelector('[data-upload-form]');
   var button = form.querySelector('button');
   var file = form.querySelector('input[type="file"]');
+  var picker = document.querySelector('[data-file-picker]');
+  var fileName = document.querySelector('[data-file-name]');
   var status = document.querySelector('[data-status]');
+  var details = document.querySelector('[data-details]');
   var result = document.querySelector('[data-result]');
+  function setStatus(text, kind) {{
+    status.textContent = text;
+    status.className = 'status' + (kind ? ' is-' + kind : '');
+  }}
+  file.addEventListener('change', function () {{
+    if (file.files.length) {{
+      picker.classList.add('has-file');
+      fileName.textContent = file.files[0].name;
+      setStatus('ZIP selected. Tap Upload ZIP when you are ready.', '');
+    }} else {{
+      picker.classList.remove('has-file');
+      fileName.textContent = 'Tap here and select the ZIP you downloaded in Range.';
+      setStatus('Waiting for you to choose the ZIP file.', '');
+    }}
+  }});
   form.addEventListener('submit', function (event) {{
     event.preventDefault();
     if (!file.files.length) {{
-      status.textContent = 'Choose the ZIP file first.';
+      setStatus('Choose the ZIP file first.', 'error');
       return;
     }}
     var data = new FormData();
     data.append('file', file.files[0]);
     button.disabled = true;
-    status.textContent = 'Uploading...';
-    result.hidden = true;
+    button.textContent = 'Uploading...';
+    setStatus('Uploading the ZIP to the dispenser. Keep this page open.', '');
+    details.hidden = true;
     fetch('/upload-repo', {{
       method: 'POST',
       headers: {{'Authorization': 'Bearer ' + token}},
@@ -269,13 +331,21 @@ pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; overflow: auto; 
       return response.json().then(function (payload) {{ return {{ok: response.ok, payload: payload}}; }});
     }}).then(function (response) {{
       var payload = response.payload || {{}};
-      result.hidden = false;
+      details.hidden = false;
       result.textContent = JSON.stringify(payload, null, 2);
-      status.textContent = payload.ok ? (payload.message || 'Scripts installed. Reconnect this phone to normal Wi-Fi now; the hotspot will disconnect shortly.') : 'Upload failed: ' + (payload.error || payload.message || 'unknown error');
+      if (payload.ok) {{
+        setStatus(payload.message || 'Done. Reconnect this phone to normal Wi-Fi now. The dispenser hotspot will turn off shortly.', 'success');
+        button.textContent = 'Upload another ZIP';
+        return;
+      }}
+      setStatus('Upload failed. ' + (payload.error || payload.message || 'Try the ZIP download again.'), 'error');
     }}).catch(function (error) {{
-      status.textContent = 'Upload failed: ' + error.message;
+      setStatus('Upload failed. ' + error.message, 'error');
     }}).finally(function () {{
       button.disabled = false;
+      if (button.textContent === 'Uploading...') {{
+        button.textContent = 'Upload ZIP';
+      }}
     }});
   }});
 }}());
