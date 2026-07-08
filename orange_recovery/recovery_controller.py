@@ -119,15 +119,7 @@ class RecoveryController:
             return
         from .api_server import RecoveryApiServer
 
-        self.api_server = RecoveryApiServer(
-            self,
-            self.config.api.host,
-            self.config.api.port,
-            self.config.api.prefer_fastapi,
-            tls_enabled=self.config.api.tls_enabled,
-            tls_cert_file=self.config.api.tls_cert_file,
-            tls_key_file=self.config.api.tls_key_file,
-        )
+        self.api_server = RecoveryApiServer(self, self.config.api.host, self.config.api.port, self.config.api.prefer_fastapi)
         self.api_server.start()
 
     def _monitor_timeouts(self) -> None:

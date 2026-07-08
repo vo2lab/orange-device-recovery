@@ -6,7 +6,6 @@ import html
 import json
 import logging
 import mimetypes
-import ssl
 import threading
 from email.parser import BytesParser
 from email.policy import default as email_policy
@@ -20,23 +19,11 @@ from .security import bearer_token, token_matches
 
 
 class RecoveryApiServer:
-    def __init__(
-        self,
-        controller: Any,
-        host: str,
-        port: int,
-        prefer_fastapi: bool = True,
-        tls_enabled: bool = False,
-        tls_cert_file: str = "",
-        tls_key_file: str = "",
-    ):
+    def __init__(self, controller: Any, host: str, port: int, prefer_fastapi: bool = True):
         self.controller = controller
         self.host = host
         self.port = port
         self.prefer_fastapi = prefer_fastapi
-        self.tls_enabled = tls_enabled
-        self.tls_cert_file = tls_cert_file
-        self.tls_key_file = tls_key_file
         self.logger = logging.getLogger("orange_recovery.api")
         self.httpd: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
@@ -59,16 +46,7 @@ class RecoveryApiServer:
             return False
         if app is None:
             return False
-        tls_files = self._tls_files()
-        config = uvicorn.Config(
-            app,
-            host=self.host,
-            port=self.port,
-            log_level="warning",
-            access_log=False,
-            ssl_certfile=tls_files[0] if tls_files else None,
-            ssl_keyfile=tls_files[1] if tls_files else None,
-        )
+        config = uvicorn.Config(app, host=self.host, port=self.port, log_level="warning", access_log=False)
         self.uvicorn_server = uvicorn.Server(config)
         self.thread = threading.Thread(target=self.uvicorn_server.run, name="orange-recovery-fastapi", daemon=True)
         self.thread.start()
@@ -78,27 +56,8 @@ class RecoveryApiServer:
         handler = self._handler_class()
         self.httpd = ThreadingHTTPServer((self.host, self.port), handler)
         self.port = int(self.httpd.server_address[1])
-        tls_files = self._tls_files()
-        if tls_files:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(certfile=tls_files[0], keyfile=tls_files[1])
-            self.httpd.socket = context.wrap_socket(self.httpd.socket, server_side=True)
         self.thread = threading.Thread(target=self.httpd.serve_forever, name="orange-recovery-http", daemon=True)
         self.thread.start()
-
-    def _tls_files(self) -> tuple[str, str] | None:
-        if not self.tls_enabled:
-            return None
-        cert = Path(self.tls_cert_file)
-        key = Path(self.tls_key_file)
-        if cert.is_file() and key.is_file():
-            return str(cert), str(key)
-        self.logger.warning(
-            "TLS is enabled but certificate files are missing; serving recovery API over HTTP. cert=%s key=%s",
-            cert,
-            key,
-        )
-        return None
 
     def stop(self) -> None:
         if self.uvicorn_server is not None:

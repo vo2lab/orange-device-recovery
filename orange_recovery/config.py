@@ -168,14 +168,9 @@ class ApiConfig:
     enabled: bool = True
     host: str = "192.168.50.1"
     port: int = 8787
-    public_hostname: str = "recovery.o-range.golf"
-    public_url: str = "https://recovery.o-range.golf:8787/"
     require_token: bool = True
     max_upload_mb: int = 50
     prefer_fastapi: bool = True
-    tls_enabled: bool = True
-    tls_cert_file: str = "/etc/orange-recovery/tls/recovery.o-range.golf/fullchain.pem"
-    tls_key_file: str = "/etc/orange-recovery/tls/recovery.o-range.golf/privkey.pem"
 
 
 @dataclass
@@ -263,14 +258,9 @@ def config_from_dict(raw: dict[str, Any]) -> RecoveryConfig:
         enabled=_bool(api.get("enabled"), cfg.api.enabled),
         host=str(api.get("host") or cfg.api.host),
         port=_int(api.get("port"), cfg.api.port),
-        public_hostname=str(api.get("public_hostname") or cfg.api.public_hostname),
-        public_url=str(api.get("public_url") or cfg.api.public_url),
         require_token=_bool(api.get("require_token"), cfg.api.require_token),
         max_upload_mb=_int(api.get("max_upload_mb"), cfg.api.max_upload_mb),
         prefer_fastapi=_bool(api.get("prefer_fastapi"), cfg.api.prefer_fastapi),
-        tls_enabled=_bool(api.get("tls_enabled"), cfg.api.tls_enabled),
-        tls_cert_file=str(api.get("tls_cert_file") or cfg.api.tls_cert_file),
-        tls_key_file=str(api.get("tls_key_file") or cfg.api.tls_key_file),
     )
 
     repair = _section(raw, "repair")
@@ -324,15 +314,5 @@ def load_config(path: str | None = None) -> RecoveryConfig:
         cfg.api.host = os.environ["ORANGE_RECOVERY_API_HOST"].strip()
     if os.environ.get("ORANGE_RECOVERY_API_PORT"):
         cfg.api.port = _int(os.environ["ORANGE_RECOVERY_API_PORT"], cfg.api.port)
-    if os.environ.get("ORANGE_RECOVERY_PUBLIC_HOSTNAME"):
-        cfg.api.public_hostname = os.environ["ORANGE_RECOVERY_PUBLIC_HOSTNAME"].strip()
-    if os.environ.get("ORANGE_RECOVERY_PUBLIC_URL"):
-        cfg.api.public_url = os.environ["ORANGE_RECOVERY_PUBLIC_URL"].strip()
-    if os.environ.get("ORANGE_RECOVERY_TLS_ENABLED"):
-        cfg.api.tls_enabled = _bool(os.environ["ORANGE_RECOVERY_TLS_ENABLED"], cfg.api.tls_enabled)
-    if os.environ.get("ORANGE_RECOVERY_TLS_CERT_FILE"):
-        cfg.api.tls_cert_file = os.environ["ORANGE_RECOVERY_TLS_CERT_FILE"].strip()
-    if os.environ.get("ORANGE_RECOVERY_TLS_KEY_FILE"):
-        cfg.api.tls_key_file = os.environ["ORANGE_RECOVERY_TLS_KEY_FILE"].strip()
 
     return cfg
