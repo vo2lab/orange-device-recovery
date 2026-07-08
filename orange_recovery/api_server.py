@@ -205,7 +205,7 @@ def upload_page(session_token: str, status: dict[str, Any]) -> str:
     token_json = json.dumps(session_token)
     machine_id = html.escape(str(status.get("machine_id") or "this dispenser"))
     state = html.escape(str(status.get("state") or "RECOVERY"))
-    message = html.escape(str(status.get("message") or "Choose the recovery repo ZIP downloaded from Range."))
+    message = html.escape(str(status.get("message") or "Choose the Orangelite Python scripts ZIP downloaded from Range."))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -229,14 +229,14 @@ pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; overflow: auto; 
 <body>
 <main>
 <h1>Orange Recovery Upload</h1>
-<p>Upload the recovery repo ZIP that was downloaded from Range while the phone was on mobile data.</p>
+<p>Upload the Orangelite Python scripts ZIP that was downloaded from Range while the phone was on mobile data.</p>
 <div class="meta">
 <span><strong>Machine:</strong> {machine_id}</span>
 <span><strong>State:</strong> {state}</span>
 <span>{message}</span>
 </div>
 <form data-upload-form>
-<label>Recovery repo ZIP<input type="file" name="file" accept=".zip,application/zip" required></label>
+<label>Orangelite Python scripts ZIP<input type="file" name="file" accept=".zip,application/zip" required></label>
 <button type="submit">Upload to Pi</button>
 </form>
 <p data-status>Waiting for ZIP file.</p>
@@ -271,7 +271,7 @@ pre {{ background: #102a30; border-radius: 8px; color: #e8fbfb; overflow: auto; 
       var payload = response.payload || {{}};
       result.hidden = false;
       result.textContent = JSON.stringify(payload, null, 2);
-      status.textContent = payload.ok ? 'Upload installed. The Pi will restore its normal network shortly.' : 'Upload failed: ' + (payload.error || payload.message || 'unknown error');
+      status.textContent = payload.ok ? (payload.message || 'Scripts installed. Reconnect this phone to normal Wi-Fi now; the hotspot will disconnect shortly.') : 'Upload failed: ' + (payload.error || payload.message || 'unknown error');
     }}).catch(function (error) {{
       status.textContent = 'Upload failed: ' + error.message;
     }}).finally(function () {{
@@ -333,7 +333,7 @@ def create_fastapi_app(controller: Any) -> Any:
     async def upload_repo(file: UploadFile = File(...), authorization: str = Header(default="")) -> JSONResponse:
         require_auth(authorization)
         body = await file.read()
-        return JSONResponse(controller.save_and_apply_repo_bundle(file.filename or "orange-device-recovery.zip", body))
+        return JSONResponse(controller.save_and_apply_repo_bundle(file.filename or "orangelite-python-scripts.zip", body))
 
     @app.post("/apply-repair")
     def apply_repair(payload: dict[str, Any], authorization: str = Header(default="")) -> dict[str, Any]:

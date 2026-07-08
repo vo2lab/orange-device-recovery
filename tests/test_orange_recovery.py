@@ -24,6 +24,7 @@ from orange_recovery.network_manager import NetworkManager
 from orange_recovery.qr_trigger import RecoveryQrHandler
 from orange_recovery.recovery_controller import RecoveryController
 from orange_recovery.repair_package import RepairPackageManager
+from orange_recovery.repo_bundle import RepoBundleInstaller
 
 
 class FakeController:
@@ -81,11 +82,10 @@ class OrangeRecoveryTest(unittest.TestCase):
                 zf.writestr(name, body)
 
     def repo_zip(self, path: Path) -> None:
-        root = "orange-device-recovery-main"
+        root = "orange_dispenser-working"
         with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{root}/install.sh", b"#!/usr/bin/env bash\nexit 0\n")
-            zf.writestr(f"{root}/orange_recovery/api_server.py", b"# api\n")
-            zf.writestr(f"{root}/orange_recovery/recovery_controller.py", b"# controller\n")
+            zf.writestr(f"{root}/main.py", b"# main\n")
+            zf.writestr(f"{root}/serial_reader.py", b"# serial reader\n")
 
     def test_qr_trigger_consumes_only_exact_configured_code(self):
         cfg = RecoveryConfig()
@@ -239,10 +239,10 @@ class OrangeRecoveryTest(unittest.TestCase):
             finally:
                 server.stop()
 
-    def test_api_uploads_repo_bundle(self):
+    def test_api_uploads_orangelite_script_bundle(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = self.config(tmp)
-            package = Path(tmp) / "orange-device-recovery.zip"
+            package = Path(tmp) / "orangelite-python-scripts.zip"
             self.repo_zip(package)
             controller = RecoveryController(cfg)
             controller.active = True
@@ -253,7 +253,7 @@ class OrangeRecoveryTest(unittest.TestCase):
                 boundary = "----orange-recovery-repo-test"
                 body = io.BytesIO()
                 body.write(f"--{boundary}\r\n".encode("ascii"))
-                body.write(b'Content-Disposition: form-data; name="file"; filename="orange-device-recovery.zip"\r\n')
+                body.write(b'Content-Disposition: form-data; name="file"; filename="orangelite-python-scripts.zip"\r\n')
                 body.write(b"Content-Type: application/zip\r\n\r\n")
                 body.write(package.read_bytes())
                 body.write(f"\r\n--{boundary}--\r\n".encode("ascii"))
@@ -273,10 +273,51 @@ class OrangeRecoveryTest(unittest.TestCase):
                 payload = json.loads(response.read().decode("utf-8"))
                 self.assertTrue(payload["ok"], payload)
                 self.assertTrue(payload["repo_bundle_valid"], payload)
+                self.assertEqual(payload["runtime_bundle_valid"], True)
                 self.assertFalse(payload["installed"], payload)
+                self.assertEqual(payload["installed_files"], ["main.py", "serial_reader.py"])
                 conn.close()
             finally:
                 server.stop()
+
+    def test_orangelite_script_bundle_backs_up_and_replaces_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            cfg.network.dry_run = False
+            cfg.repair.orangelite_root = str(Path(tmp) / "orangelite")
+            target_root = Path(cfg.repair.orangelite_root)
+            target_root.mkdir(parents=True)
+            (target_root / "main.py").write_text("old main\n", encoding="utf-8")
+            package = Path(tmp) / "orangelite-python-scripts.zip"
+
+            with zipfile.ZipFile(package, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("main.py", "new main\n")
+                zf.writestr("serial_reader.py", "new reader\n")
+
+            result = RepoBundleInstaller(cfg).install(str(package))
+
+            self.assertTrue(result.ok, result.error)
+            self.assertTrue(result.installed)
+            self.assertEqual((target_root / "main.py").read_text(encoding="utf-8"), "new main\n")
+            self.assertEqual((target_root / "serial_reader.py").read_text(encoding="utf-8"), "new reader\n")
+            backups = list((Path(cfg.paths.backup_dir) / "orangelite-scripts").glob("*/main.py"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(encoding="utf-8"), "old main\n")
+
+    def test_orangelite_script_bundle_rejects_nested_or_non_python_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config(tmp)
+            nested = Path(tmp) / "nested.zip"
+            with zipfile.ZipFile(nested, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("orange_dispenser-working/main.py", "# ok\n")
+                zf.writestr("orange_dispenser-working/scripts/worker.py", "# nested\n")
+            self.assertEqual(RepoBundleInstaller(cfg).install(str(nested)).error, "nested_file_rejected")
+
+            non_python = Path(tmp) / "non-python.zip"
+            with zipfile.ZipFile(non_python, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("main.py", "# ok\n")
+                zf.writestr("README.md", "not allowed\n")
+            self.assertEqual(RepoBundleInstaller(cfg).install(str(non_python)).error, "non_python_file_rejected")
 
     def test_hotspot_dry_run_prepares_networkmanager_wifi(self):
         with tempfile.TemporaryDirectory() as tmp:

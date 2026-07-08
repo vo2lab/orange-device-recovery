@@ -142,6 +142,7 @@ repair:
   max_zip_mb: 50
   require_machine_match: true
   allow_script_execution: false
+  orangelite_root: "/home/pi/orangelite"
   allowed_target_prefixes:
     - "/home/pi/orangelite/config/"
     - "/etc/orange/"

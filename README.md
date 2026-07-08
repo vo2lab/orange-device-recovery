@@ -1,7 +1,7 @@
 # Orange Device Recovery
 
 Orange Device Recovery is a dispenser-side, hotspot-bound recovery service for
-repair packages and recovery repo ZIP bundles. The o:range phone app or admin
+repair packages and Orangelite Python script ZIP bundles. The o:range phone app or admin
 portal owns the technician workflow. During recovery, the Raspberry Pi also
 serves a minimal local upload page so a phone can transfer the ZIP after joining
 the Pi hotspot.
@@ -55,8 +55,9 @@ Set `PURGE_CONFIG=1` to remove config, uploads, state, and backups.
 4. The phone joins `ORANGE-RECOVERY-<MACHINE_ID>`.
 5. The phone opens `http://192.168.50.1:8787`.
 6. The local page asks for the ZIP file and uploads it to the Pi.
-7. The Pi validates and applies the uploaded recovery repo bundle, then restores
-   normal networking.
+7. The Pi validates the uploaded script bundle, backs up existing matching
+   files, replaces them in `/home/pi/orangelite`, tells the phone to reconnect to
+   normal Wi-Fi, then restores normal networking.
 
 ## Integration
 
@@ -80,7 +81,7 @@ processing.
 
 - `GET /status`
 - `POST /upload-repair` with multipart `file=repair_package.zip`
-- `POST /upload-repo` with multipart `file=orange-device-recovery.zip`
+- `POST /upload-repo` with multipart `file=orangelite-python-scripts.zip`
 - `POST /apply-repair` with `{"confirm": true}`
 - `GET /progress`
 - `GET /result`
@@ -94,8 +95,12 @@ enabled. The server binds only to `api.host`, which must be the hotspot IP in
 production.
 
 `GET /` serves the minimal browser upload page used by the mobile transfer flow.
-The page embeds the current session token and posts the chosen repo ZIP to
-`/upload-repo`.
+The page embeds the current session token and posts the chosen Orangelite Python
+scripts ZIP to `/upload-repo`.
+
+The `/upload-repo` endpoint only accepts top-level `.py` files. It rejects nested
+paths, symlinks, and non-Python files. Existing target files are backed up under
+`/var/backups/orange-recovery/orangelite-scripts/` before replacement.
 
 ## Hotspot Troubleshooting
 

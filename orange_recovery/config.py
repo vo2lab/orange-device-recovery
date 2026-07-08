@@ -178,6 +178,7 @@ class RepairConfig:
     max_zip_mb: int = 50
     require_machine_match: bool = True
     allow_script_execution: bool = False
+    orangelite_root: str = "/home/pi/orangelite"
     allowed_target_prefixes: list[str] = field(default_factory=lambda: [
         "/home/pi/orangelite/config/",
         "/etc/orange/",
@@ -269,6 +270,7 @@ def config_from_dict(raw: dict[str, Any]) -> RecoveryConfig:
         max_zip_mb=_int(repair.get("max_zip_mb"), cfg.repair.max_zip_mb),
         require_machine_match=_bool(repair.get("require_machine_match"), cfg.repair.require_machine_match),
         allow_script_execution=_bool(repair.get("allow_script_execution"), cfg.repair.allow_script_execution),
+        orangelite_root=str(repair.get("orangelite_root") or cfg.repair.orangelite_root),
         allowed_target_prefixes=[str(item) for item in prefixes] if isinstance(prefixes, list) else cfg.repair.allowed_target_prefixes,
     )
 
@@ -314,5 +316,7 @@ def load_config(path: str | None = None) -> RecoveryConfig:
         cfg.api.host = os.environ["ORANGE_RECOVERY_API_HOST"].strip()
     if os.environ.get("ORANGE_RECOVERY_API_PORT"):
         cfg.api.port = _int(os.environ["ORANGE_RECOVERY_API_PORT"], cfg.api.port)
+    if os.environ.get("ORANGE_RECOVERY_ORANGELITE_ROOT"):
+        cfg.repair.orangelite_root = os.environ["ORANGE_RECOVERY_ORANGELITE_ROOT"].strip()
 
     return cfg

@@ -189,25 +189,27 @@ class RecoveryController:
             return {"ok": False, "repo_bundle_valid": False, "error": "upload_too_large"}
         upload_dir = Path(self.config.paths.upload_dir)
         upload_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = Path(filename or "orange-device-recovery.zip").name
+        safe_name = Path(filename or "orangelite-python-scripts.zip").name
         path = upload_dir / f"{int(time.time())}-{safe_name}"
         path.write_bytes(body)
         os.chmod(path, 0o600)
         self.uploaded_package_path = str(path)
-        self._set_state(PACKAGE_UPLOADED, "Recovery repo bundle uploaded.")
-        self._set_state(VALIDATING_PACKAGE, "Validating recovery repo bundle.")
-        self._set_state(APPLYING_REPAIR, "Installing recovery repo bundle.", step="install_repo_bundle", percent=50)
+        self._set_state(PACKAGE_UPLOADED, "Orangelite Python scripts uploaded.")
+        self._set_state(VALIDATING_PACKAGE, "Validating Orangelite Python scripts.")
+        self._set_state(APPLYING_REPAIR, "Backing up and replacing Orangelite Python scripts.", step="install_orangelite_scripts", percent=50)
         result = self.repo_bundle_installer.install(str(path))
         payload = result.as_response()
         if result.ok:
             self.result = {
                 "ok": True,
                 "state": COMPLETE,
-                "message": "Recovery repo bundle installed. Restoring normal network.",
+                "message": str(result.message),
                 "reboot_required": False,
             }
             self._set_state(COMPLETE, self.result["message"], step="complete", percent=100)
-            self.exit_recovery_async(delay_seconds=8)
+            payload["disconnecting"] = True
+            payload["disconnect_delay_seconds"] = 12
+            self.exit_recovery_async(delay_seconds=12)
         else:
             self.result = {"ok": False, "state": FAILED, "message": result.error or result.message, "reboot_required": False}
             self._set_state(FAILED, self.result["message"], step="failed", percent=100)
